@@ -7,7 +7,7 @@ const OpenAI = require('openai');
 const admin = require('firebase-admin');
 
 const app = express();
-const port = 3000;
+const port = 3001;
 
 app.use(cors({ origin: 'http://localhost:8100' }));
 

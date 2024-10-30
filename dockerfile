@@ -1,24 +1,21 @@
-# Use an official Node.js runtime as a parent image
+# Use Node.js as the base image
 FROM node:18
 
-# Set the working directory in the container
-WORKDIR /usr/src/app
+# Set the working directory inside the container
+WORKDIR /app
 
-# Copy the package.json and package-lock.json files to the working directory
+# Copy the package files and install dependencies
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
 
-# Copy the application files to the container
+# Copy the rest of the application code
 COPY . .
 
-# Specify the path to the Firebase credentials JSON in the environment
-# This will be dynamically loaded from the mounted .env file and json key at runtime
-ENV GOOGLE_APPLICATION_CREDENTIALS=/usr/src/app/insights-key.json
-
 # Expose the port the app runs on
-EXPOSE 3000
+EXPOSE 3001
+
+# Set environment variables (or use a .env file as needed)
+ENV NODE_ENV=production
 
 # Start the application
 CMD ["node", "index.js"]
