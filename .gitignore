@@ -1,0 +1,4 @@
+# Ignore environment files and Firebase credentials
+.env
+insights-key.json
+node_modules/
