@@ -9,7 +9,7 @@ const admin = require('firebase-admin');
 const app = express();
 const port = 3001;
 
-app.use(cors({ origin: 'http://localhost:8100' }));
+app.use(cors());
 
 // Ensure required environment variables are set
 if (!process.env.OPENAI_API_KEY || !process.env.FIREBASE_PROJECT_ID) {
@@ -121,6 +121,7 @@ app.post('/transcribe', express.raw({ type: 'application/octet-stream', limit: '
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Server running at http://0.0.0.0:${port}`);
 });
+
