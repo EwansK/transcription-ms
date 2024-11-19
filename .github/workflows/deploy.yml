@@ -1,0 +1,43 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main  # Deploy on pushes to the main branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up SSH agent
+      uses: webfactory/ssh-agent@v0.5.4
+      with:
+        ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+    - name: Deploy application to EC2
+      run: |
+        ssh -o StrictHostKeyChecking=no ec2-user@3.89.136.74 << 'EOF'
+          # Navigate to the project directory or clone the repo
+          if [ ! -d "/home/ec2-user/transcription-ms" ]; then
+            git clone https://github.com/EwansK/transcription-ms.git /home/ec2-user/transcription-ms
+          fi
+          cd /home/ec2-user/transcription-ms
+          
+          # Pull latest changes
+          git reset --hard  # Reset local changes if any
+          git pull origin main
+          
+          # Install dependencies
+          npm install
+
+          # Stop any running instances of the service
+          pkill -f "node index.js" || true
+
+          # Start the service
+          nohup node index.js > app.log 2>&1 &
+          echo "Service deployed and running on http://3.89.136.74:3001"
+        EOF
