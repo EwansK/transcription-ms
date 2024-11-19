@@ -62,8 +62,14 @@ async function transcribeWithRetry(openai, fileStream, language, retries = 3) {
 // Endpoint to handle audio upload and transcription
 app.post('/transcribe', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
   const audioBuffer = req.body;
-  const tempFilePath = path.join(__dirname, 'uploads', `temp_${Date.now()}.webm`);
 
+  // Ensure the 'uploads' directory exists
+  const uploadsDir = path.join(__dirname, 'uploads');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir);
+  }
+  const tempFilePath = path.join(__dirname, 'uploads', `temp_${Date.now()}.webm`);
+ 
   // Save the raw audio data temporarily
   try {
     fs.writeFileSync(tempFilePath, audioBuffer);
