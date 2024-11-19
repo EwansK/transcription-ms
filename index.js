@@ -1,17 +1,24 @@
-require('dotenv').config();
+/**
+ * Node.js Transcription Service
+ * This service uses OpenAI Whisper API for audio transcription, Firebase for storage,
+ * and Firestore for saving transcriptions.
+ */
+
+require('dotenv').config(); // Load environment variables from .env file
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const OpenAI = require('openai');
-const admin = require('firebase-admin');
+const OpenAI = require('openai'); // OpenAI API for transcription
+const admin = require('firebase-admin'); // Firebase Admin SDK
 
 const app = express();
 const port = 3001;
 
+// Enable CORS for handling cross-origin requests
 app.use(cors());
 
-// Ensure required environment variables are set
+// Check for required environment variables
 if (!process.env.OPENAI_API_KEY || !process.env.FIREBASE_PROJECT_ID) {
   console.error("API keys or Firebase configurations are missing in the .env file.");
   process.exit(1);
@@ -19,10 +26,10 @@ if (!process.env.OPENAI_API_KEY || !process.env.FIREBASE_PROJECT_ID) {
   console.log("Environment variables loaded successfully.");
 }
 
-// Configure OpenAI API
+// Configure OpenAI API client
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
-  timeout: 30000, // Set timeout to 30 seconds
+  timeout: 30000, // Timeout set to 30 seconds
 });
 
 // Initialize Firebase Admin SDK for Firestore and Storage
@@ -42,10 +49,17 @@ try {
   process.exit(1);
 }
 
-const db = admin.firestore(); // Firestore reference
-const bucket = admin.storage().bucket(); // Firebase Storage reference
+const db = admin.firestore(); // Firestore instance
+const bucket = admin.storage().bucket(); // Firebase Storage bucket instance
 
-// Retry function for the transcription request
+/**
+ * Retry transcription with OpenAI Whisper
+ * @param {Object} openai - OpenAI client instance
+ * @param {ReadableStream} fileStream - Audio file stream
+ * @param {string} language - Language code for transcription
+ * @param {number} retries - Number of retry attempts
+ * @returns {Promise<Object>} Transcription response from OpenAI
+ */
 async function transcribeWithRetry(openai, fileStream, language, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -56,38 +70,40 @@ async function transcribeWithRetry(openai, fileStream, language, retries = 3) {
         language,
       });
       console.log(`Transcription attempt ${attempt} successful.`);
-      return response;
+      return response; // Return successful response
     } catch (error) {
       console.error(`Transcription attempt ${attempt} failed:`, error);
       if (attempt === retries) {
         console.error('All transcription attempts failed.');
-        throw error;
+        throw error; // Throw error after exhausting retries
       }
-      console.log(`Retrying transcription (attempt ${attempt + 1}) after error: ${error.message || error}`);
+      console.log(`Retrying transcription (attempt ${attempt + 1})...`);
     }
   }
 }
 
-// Endpoint to handle audio upload and transcription
+/**
+ * POST /transcribe - Handle audio upload and transcription
+ */
 app.post('/transcribe', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
   console.log("Received a request to /transcribe.");
   const audioBuffer = req.body;
 
-  // Ensure the 'uploads' directory exists
+  // Ensure 'uploads' directory exists
   const uploadsDir = path.join(__dirname, 'uploads');
   if (!fs.existsSync(uploadsDir)) {
     console.log("Uploads directory does not exist. Creating it...");
     fs.mkdirSync(uploadsDir);
   }
 
-  const tempFilePath = path.join(__dirname, 'uploads', `temp_${Date.now()}.webm`);
+  const tempFilePath = path.join(uploadsDir, `temp_${Date.now()}.webm`);
 
-  // Save the raw audio data temporarily
+  // Save uploaded audio data to a temporary file
   try {
     fs.writeFileSync(tempFilePath, audioBuffer);
     console.log(`File saved temporarily at ${tempFilePath}`);
-  } catch (fileError) {
-    console.error('Error saving temporary audio file:', fileError);
+  } catch (error) {
+    console.error("Error saving temporary audio file:", error);
     return res.status(500).send("Error saving audio file.");
   }
 
@@ -99,11 +115,11 @@ app.post('/transcribe', express.raw({ type: 'application/octet-stream', limit: '
     const fileURL = `gs://${bucket.name}/${destination}`;
     console.log(`File uploaded to Firebase Storage at ${fileURL}`);
 
-    // Set transcription language (default to Spanish if not provided)
+    // Set transcription language (default to Spanish)
     const language = req.query.language || "es";
     console.log(`Using language: ${language}`);
 
-    // Transcribe audio using OpenAI Whisper with retry logic
+    // Transcribe audio using OpenAI Whisper
     console.log("Sending transcription request to OpenAI Whisper...");
     const response = await transcribeWithRetry(openai, fs.createReadStream(tempFilePath), language);
 
@@ -112,38 +128,41 @@ app.post('/transcribe', express.raw({ type: 'application/octet-stream', limit: '
 
     // Save transcription in Firestore
     console.log("Saving transcription to Firestore...");
-    const docRef = db.collection('transcriptions').doc(); // Generate new document
+    const docRef = db.collection('transcriptions').doc(); // Generate a new Firestore document
     await docRef.set({
       transcription,
       language,
-      fileURL, // Store the Firebase Storage URI for reference
+      fileURL, // Store the Firebase Storage file URI
       timestamp: new Date().toISOString(),
     });
     console.log("Transcription saved successfully in Firestore.");
 
-    res.json({ transcription, message: 'Transcription saved to Firebase Firestore successfully!' });
+    // Respond with the transcription result
+    res.json({ transcription, message: "Transcription saved to Firebase Firestore successfully!" });
   } catch (error) {
-    console.error('Error during transcription process:', error);
+    console.error("Error during transcription process:", error);
     res.status(500).send("Error processing audio file.");
   } finally {
-    // Clean up temporary file
+    // Delete the temporary file
     try {
       console.log(`Deleting temporary file: ${tempFilePath}`);
       fs.unlinkSync(tempFilePath);
       console.log(`Temporary file ${tempFilePath} deleted.`);
     } catch (unlinkError) {
-      console.error('Error deleting temporary file:', unlinkError);
+      console.error("Error deleting temporary file:", unlinkError);
     }
   }
 });
 
-// Health check endpoint
+/**
+ * GET / - Health check endpoint
+ */
 app.get('/', (req, res) => {
   console.log("Health check endpoint hit.");
-  res.send('Server is running.');
+  res.send("Server is running.");
 });
 
-// Start server
-app.listen(port, '0.0.0.0', () => {
+// Start the server
+app.listen(port, "0.0.0.0", () => {
   console.log(`Server running at http://0.0.0.0:${port}`);
 });
