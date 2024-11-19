@@ -121,6 +121,10 @@ app.post('/transcribe', express.raw({ type: 'application/octet-stream', limit: '
   }
 });
 
+app.get('/', (req, res) => {
+  res.send('Server is running.');
+});
+
 app.listen(port, '0.0.0.0', () => {
   console.log(`Server running at http://0.0.0.0:${port}`);
 });
