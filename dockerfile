@@ -1,21 +1,24 @@
-# Use Node.js as the base image
-FROM node:18
+FROM node:20  
+# Install OpenSSL and enable legacy provider
+RUN apt-get update && apt-get install -y openssl && \
+    echo "openssl_conf = default_conf" >> /etc/ssl/openssl.cnf && \
+    echo "[default_conf]" >> /etc/ssl/openssl.cnf && \
+    echo "ssl_conf = ssl_sect" >> /etc/ssl/openssl.cnf && \
+    echo "[ssl_sect]" >> /etc/ssl/openssl.cnf && \
+    echo "system_default = crypto_policy" >> /etc/ssl/openssl.cnf
 
-# Set the working directory inside the container
+# Set the working directory
 WORKDIR /app
 
-# Copy the package files and install dependencies
+# Copy package.json and install dependencies
 COPY package*.json ./
 RUN npm install
 
-# Copy the rest of the application code
+# Copy the application code
 COPY . .
 
-# Expose the port the app runs on
+# Expose the port your app runs on
 EXPOSE 3001
-
-# Set environment variables (or use a .env file as needed)
-ENV NODE_ENV=production
 
 # Start the application
 CMD ["node", "index.js"]
