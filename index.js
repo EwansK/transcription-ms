@@ -11,9 +11,6 @@ const port = 3001;
 
 app.use(cors());
 
-// Explicitly set OpenSSL config for legacy support
-process.env.OPENSSL_CONF = "/etc/ssl/openssl.cnf";
-
 // Ensure required environment variables are set
 if (!process.env.OPENAI_API_KEY || !process.env.FIREBASE_PROJECT_ID) {
   console.error("API keys or Firebase configurations are missing in the .env file.");
@@ -30,6 +27,7 @@ const openai = new OpenAI({
 
 // Initialize Firebase Admin SDK for Firestore and Storage
 try {
+  console.log("Attempting to initialize Firebase...");
   admin.initializeApp({
     credential: admin.credential.cert({
       projectId: process.env.FIREBASE_PROJECT_ID,
@@ -46,18 +44,6 @@ try {
 
 const db = admin.firestore(); // Firestore reference
 const bucket = admin.storage().bucket(); // Firebase Storage reference
-
-// Test Firebase initialization
-async function testFirebaseSetup() {
-  try {
-    await admin.auth().listUsers(1);
-    console.log("Firebase Admin SDK is properly configured.");
-  } catch (error) {
-    console.error("Firebase Admin SDK configuration error:", error);
-    process.exit(1);
-  }
-}
-testFirebaseSetup();
 
 // Retry function for the transcription request
 async function transcribeWithRetry(openai, fileStream, language, retries = 3) {
@@ -136,7 +122,6 @@ app.post('/transcribe', express.raw({ type: 'application/octet-stream', limit: '
     console.log("Transcription saved successfully in Firestore.");
 
     res.json({ transcription, message: 'Transcription saved to Firebase Firestore successfully!' });
-
   } catch (error) {
     console.error('Error during transcription process:', error);
     res.status(500).send("Error processing audio file.");
