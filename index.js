@@ -11,6 +11,9 @@ const port = 3001;
 
 app.use(cors());
 
+// Explicitly set OpenSSL config for legacy support
+process.env.OPENSSL_CONF = "/etc/ssl/openssl.cnf";
+
 // Ensure required environment variables are set
 if (!process.env.OPENAI_API_KEY || !process.env.FIREBASE_PROJECT_ID) {
   console.error("API keys or Firebase configurations are missing in the .env file.");
@@ -22,7 +25,7 @@ if (!process.env.OPENAI_API_KEY || !process.env.FIREBASE_PROJECT_ID) {
 // Configure OpenAI API
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
-  timeout: 30000,  // Set timeout to 30 seconds
+  timeout: 30000, // Set timeout to 30 seconds
 });
 
 // Initialize Firebase Admin SDK for Firestore and Storage
@@ -41,8 +44,20 @@ try {
   process.exit(1);
 }
 
-const db = admin.firestore();  // Firestore reference
-const bucket = admin.storage().bucket();  // Firebase Storage reference
+const db = admin.firestore(); // Firestore reference
+const bucket = admin.storage().bucket(); // Firebase Storage reference
+
+// Test Firebase initialization
+async function testFirebaseSetup() {
+  try {
+    await admin.auth().listUsers(1);
+    console.log("Firebase Admin SDK is properly configured.");
+  } catch (error) {
+    console.error("Firebase Admin SDK configuration error:", error);
+    process.exit(1);
+  }
+}
+testFirebaseSetup();
 
 // Retry function for the transcription request
 async function transcribeWithRetry(openai, fileStream, language, retries = 3) {
@@ -111,11 +126,11 @@ app.post('/transcribe', express.raw({ type: 'application/octet-stream', limit: '
 
     // Save transcription in Firestore
     console.log("Saving transcription to Firestore...");
-    const docRef = db.collection('transcriptions').doc();  // Generate new document
+    const docRef = db.collection('transcriptions').doc(); // Generate new document
     await docRef.set({
       transcription,
       language,
-      fileURL,  // Store the Firebase Storage URI for reference
+      fileURL, // Store the Firebase Storage URI for reference
       timestamp: new Date().toISOString(),
     });
     console.log("Transcription saved successfully in Firestore.");
