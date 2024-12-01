@@ -11,6 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const OpenAI = require('openai'); // OpenAI API for transcription
 const admin = require('firebase-admin'); // Firebase Admin SDK
+const ffmpeg = require('fluent-ffmpeg'); // FFmpeg for audio conversion
 
 const app = express();
 const port = 3001;
@@ -19,7 +20,13 @@ const port = 3001;
 app.use(cors());
 
 // Check for required environment variables
-if (!process.env.OPENAI_API_KEY || !process.env.FIREBASE_PROJECT_ID) {
+if (
+  !process.env.OPENAI_API_KEY ||
+  !process.env.FIREBASE_PROJECT_ID ||
+  !process.env.FIREBASE_CLIENT_EMAIL ||
+  !process.env.FIREBASE_PRIVATE_KEY ||
+  !process.env.FIREBASE_BUCKET_NAME
+) {
   console.error("API keys or Firebase configurations are missing in the .env file.");
   process.exit(1);
 } else {
@@ -85,7 +92,7 @@ async function transcribeWithRetry(openai, fileStream, language, retries = 3) {
 /**
  * POST /transcribe - Handle audio upload and transcription
  */
-app.post('/transcribe', express.raw({ type: 'application/octet-stream', limit: '10mb' }), async (req, res) => {
+app.post('/transcribe', express.raw({ type: 'application/octet-stream', limit: '20mb' }), async (req, res) => {
   console.log("Received a request to /transcribe.");
   const audioBuffer = req.body;
 
@@ -96,9 +103,10 @@ app.post('/transcribe', express.raw({ type: 'application/octet-stream', limit: '
     fs.mkdirSync(uploadsDir);
   }
 
-  const tempFilePath = path.join(uploadsDir, `temp_${Date.now()}.webm`);
+  const tempFileName = `temp_${Date.now()}`;
+  const tempFilePath = path.join(uploadsDir, tempFileName);
 
-  // Save uploaded audio data to a temporary file
+  // Save uploaded audio data to a temporary file (without extension)
   try {
     fs.writeFileSync(tempFilePath, audioBuffer);
     console.log(`File saved temporarily at ${tempFilePath}`);
@@ -107,11 +115,31 @@ app.post('/transcribe', express.raw({ type: 'application/octet-stream', limit: '
     return res.status(500).send("Error saving audio file.");
   }
 
+  // Set the output format and converted file path
+  const outputFormat = 'mp3';
+  const convertedFilePath = path.join(uploadsDir, `${tempFileName}.${outputFormat}`);
+
   try {
-    // Upload file to Firebase Storage
-    console.log("Uploading file to Firebase Storage...");
-    const destination = `audio/${path.basename(tempFilePath)}`;
-    await bucket.upload(tempFilePath, { destination });
+    // Convert the audio file to the desired format using FFmpeg
+    console.log(`Converting audio file to ${outputFormat} format...`);
+    await new Promise((resolve, reject) => {
+      ffmpeg(tempFilePath)
+        .output(convertedFilePath)
+        .on('end', () => {
+          console.log(`Conversion successful: ${convertedFilePath}`);
+          resolve();
+        })
+        .on('error', (err) => {
+          console.error("Error during conversion:", err);
+          reject(err);
+        })
+        .run();
+    });
+
+    // Upload the converted file to Firebase Storage
+    console.log("Uploading converted file to Firebase Storage...");
+    const destination = `audio/${path.basename(convertedFilePath)}`;
+    await bucket.upload(convertedFilePath, { destination });
     const fileURL = `gs://${bucket.name}/${destination}`;
     console.log(`File uploaded to Firebase Storage at ${fileURL}`);
 
@@ -121,7 +149,7 @@ app.post('/transcribe', express.raw({ type: 'application/octet-stream', limit: '
 
     // Transcribe audio using OpenAI Whisper
     console.log("Sending transcription request to OpenAI Whisper...");
-    const response = await transcribeWithRetry(openai, fs.createReadStream(tempFilePath), language);
+    const response = await transcribeWithRetry(openai, fs.createReadStream(convertedFilePath), language);
 
     const transcription = response.text;
     console.log(`Transcription success: ${transcription}`);
@@ -143,13 +171,14 @@ app.post('/transcribe', express.raw({ type: 'application/octet-stream', limit: '
     console.error("Error during transcription process:", error);
     res.status(500).send("Error processing audio file.");
   } finally {
-    // Delete the temporary file
+    // Delete the temporary files
     try {
-      console.log(`Deleting temporary file: ${tempFilePath}`);
+      console.log(`Deleting temporary files: ${tempFilePath}, ${convertedFilePath}`);
       fs.unlinkSync(tempFilePath);
-      console.log(`Temporary file ${tempFilePath} deleted.`);
+      fs.unlinkSync(convertedFilePath);
+      console.log("Temporary files deleted.");
     } catch (unlinkError) {
-      console.error("Error deleting temporary file:", unlinkError);
+      console.error("Error deleting temporary files:", unlinkError);
     }
   }
 });
